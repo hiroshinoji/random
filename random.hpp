@@ -1,3 +1,6 @@
+#ifndef _RANDOM_H_
+#define _RANDOM_H_
+
 #include <random>
 #include <cassert>
 #include <cmath>
@@ -136,3 +139,5 @@ public:
 private:
   std::function<double(void)> gen;
 };
+
+#endif /* _RANDOM_H_ */
