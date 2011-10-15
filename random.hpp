@@ -5,15 +5,11 @@
 #include <cassert>
 #include <cmath>
 
-class Random {
+class RandomBase {
 public:
-  Random(int seed = 10)
-    : gen(std::bind(std::uniform_real_distribution<double>(0.0, 1.0),
-                    std::mt19937(seed))) {}
+  virtual ~RandomBase() {}
 
-  double NextDouble() {
-    return gen();
-  }
+  virtual double NextDouble() = 0;
 
   int NextInt(long int max) {
     return NextDouble() * (max-1);
@@ -135,7 +131,28 @@ public:
     assert(x == 0 || pdf[x-1] != pdf[x]);
     return x;
   }
+};
 
+class RandomMT : public RandomBase {
+public:
+  RandomMT(int seed = 10)
+    : gen(std::bind(std::uniform_real_distribution<double>(0.0, 1.0),
+                    std::mt19937(seed))) {
+  }
+  double NextDouble() {
+    return gen();
+  }
+private:
+  std::function<double(void)> gen;  
+};
+
+class RandomRand : public RandomBase {
+public:
+  RandomRand(int seed = 10)
+    : gen(rand) {}
+  double NextDouble() {
+    return static_cast<double>(gen()) / static_cast<double>(INT_MAX);
+  }
 private:
   std::function<double(void)> gen;
 };
