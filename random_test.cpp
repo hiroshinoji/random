@@ -2,21 +2,23 @@
 #include <iostream>
 #include <algorithm>
 #include <map>
+#include <memory>
+#include <iterator>
 
 using namespace std;
 int main(int argc, char *argv[])
 {
-  Random r;
+  unique_ptr<RandomBase> r(new RandomMT());
 
   cout << "some randoms" << endl;
   for (size_t i = 0; i < 3; ++i) {
-    cout << r.NextDouble() << endl;
+    cout << r->NextDouble() << endl;
   }
   cout << endl;
   std::vector<double> alpha(10, 0.1);
   
   cout << "draw from dirichlet simplex" << endl;
-  std::vector<double> dirichletSample = r.NextDirichlet(alpha);
+  std::vector<double> dirichletSample = r->NextDirichlet(alpha);
   cout << "sum(normalizing constant) = " << std::accumulate(dirichletSample.begin(), dirichletSample.end(), 0.0) << endl;
   cout << "drawn sample:"<< endl;
   std::cout << "[ ";
@@ -37,7 +39,7 @@ int main(int argc, char *argv[])
   std::cout << "]" << endl;
   cout << "result:" << endl;
   for (size_t i = 0; i < 10000000; ++i) {
-    drawCounts[r.SampleUnnormalizedPdf(pdf)]++;
+    drawCounts[r->SampleUnnormalizedPdf(pdf)]++;
   }
   for (const auto &count : drawCounts) {
     cout << count.first << " : " << count.second << endl;

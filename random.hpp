@@ -1,17 +1,30 @@
 #ifndef _RANDOM_H_
 #define _RANDOM_H_
 
+#include <iostream>
+#include <functional>
 #include <random>
+#include <climits>
 #include <cassert>
 #include <cmath>
+#include <unordered_map>
 
 class RandomBase {
 public:
   virtual ~RandomBase() {}
 
   virtual double NextDouble() = 0;
+  virtual double NextGaussian(double mean, double stddev) = 0;
 
-  int NextInt(long int max) {
+  double operator()() {
+    return NextDouble();
+  }
+  
+  long int operator()(long int max) {
+    return NextMult(max);
+  }
+
+  long int NextMult(long int max) {
     return NextDouble() * (max-1);
   }
 
@@ -19,7 +32,6 @@ public:
     return trueProb > NextDouble();
   }
 
-  // from mots quotidiens. http://chasen.org/~daiti-m/diary/?20051228
   double NextGamma(double a) {
     double x, y, z;
     double u, v, w, b, c, e;
@@ -58,50 +70,65 @@ public:
       } while (accept != 1);
       return x;
     }
-    
+  }
+
+  double NextGamma(double a, double b) {
+    return NextGamma(a) / b;
+  }
+
+  double NextBeta(double a, double b) {
+    double x = NextGamma(a), y = NextGamma(b);
+    return x / (x + y);
   }
   
-  // from mots quotidiens. http://chasen.org/~daiti-m/diary/?20051228
-  // modified a little.
-  // This is the clone of the MATLAB dirichlet simplex generator
-  std::vector<double> NextDirichlet(const std::vector<double>& alpha, double prec = 0) {
-    std::vector<double> theta(alpha.size());
-    int i;
+  template <typename ValueType>
+  std::unordered_map<int, double> NextDirichlet(const std::unordered_map<int, ValueType>& alpha, double prec = 0) {
+    std::unordered_map<int, double> theta;
     double z = 0;
     /* theta must have been allocated */
-    for (i = 0; i < (int)alpha.size(); i++)
-      if (prec != 0)
-        theta[i] = NextGamma(alpha[i] * prec);
-      else
-        theta[i] = NextGamma(alpha[i]);
-    for (i = 0; i < (int)alpha.size(); i++)
-      z += theta[i];
-    for (i = 0; i < (int)alpha.size(); i++)
-      theta[i] /= z;
+    for (const auto& item : alpha) {
+      const int key = item.first;
+      const ValueType value = item.second;
+      if (prec != 0) {
+        theta[key] = NextGamma(value * prec);
+      } else {
+        theta[key] = NextGamma(value);
+      }
+      if (theta[key] < 0.00000001) theta[key] = 0.00000001;
+      z += theta[key];
+    }
+    for (auto& item : theta) {
+      item.second /= z;
+    }
     return theta;
   }
 
+  template <typename ValueType>
+  std::vector<double> NextDirichlet(const std::vector<ValueType>& alpha, double prec = 0) {
+    std::vector<double> theta(alpha.size());
+    double z = 0;
+    /* theta must have been allocated */
+    for (size_t i = 0; i < alpha.size(); i++) {
+      if (alpha[i] != 0) {
+        if (prec != 0) {
+          theta[i] = NextGamma(alpha[i] * prec);
+        } else {
+          theta[i] = NextGamma(alpha[i]);
+        }
+        z += theta[i];
+      }
+    }
+    for (size_t i = 0; i < alpha.size(); i++) {
+      if (alpha[i] != 0) {
+        theta[i] /= z;
+      }
+    }
+    return theta;
+  }
   
-  /**
-   * Sample from a discrete distribution on 0,...,MAX with the given PDF.
-   *
-   * The probability if returning x for x \in 0,...,MAX is given by 
-   *   pdf[x] / (\sum_{i=0,...,end_pos} pdf[i])
-   * i.e. pdf is normalized so that the sum of all elements up to and including
-   * element end_pos is 1.
-   *  
-   * Algorithm:
-   *   1) Compute CDF; normalizing constant Z = CDF[end_pos]
-   *   2) Sample z ~ Uniform(0,Z)
-   *   3) find the smallest element x of CDF that is larger than i using binary
-   *      search
-   *   4) return x
-   *
-   * Complexity: O(log MAX)
-   */
   int SampleUnnormalizedPdf(std::vector<double> pdf, int endPos = 0) {
     assert(pdf.size() > 0);
-    assert(endPos < pdf.size());
+    assert(endPos < (int)pdf.size());
     assert(endPos >= 0);
 
     // if endPos == 0, use entire vector
@@ -111,6 +138,9 @@ public:
     
     // compute CDF (inplace)
     for (int i = 0; i < endPos; ++i) {
+      if (pdf[i] < 0) {
+        std::cerr << "pdf[i] " << pdf[i] << std::endl;
+      }
       assert(pdf[i] >= 0);
       pdf[i+1] += pdf[i];
     }
@@ -122,14 +152,45 @@ public:
 
     assert((z >= 0) && (z <= pdf[endPos]));
     
-    // Perform binary search for z using std::lower_bound.
-    // lower_bound(begin, end, x) returns the first element within [begin,end)
-    // that is equal or larger than x.
     int x = std::lower_bound(pdf.begin(), pdf.begin() + endPos + 1, z)
       - pdf.begin();
 
     assert(x == 0 || pdf[x-1] != pdf[x]);
     return x;
+  }
+  
+  int SamplePdfAnnealing(std::vector<double> pdf, double templature = 1, int endPos = 0) {
+    double s = 0;
+    if (endPos == 0) {
+      endPos = pdf.size() - 1;
+    }
+    for (int i = 0; i <= endPos; ++i) {
+      s += pdf[i];
+    }
+    for (int i = 0 ; i <= endPos; ++i) {
+      pdf[i] = pow((pdf[i] / s), templature);
+    }
+    return SampleUnnormalizedPdf(move(pdf), endPos);
+  }
+  
+  template <typename KeyType, typename ValueType>
+  KeyType SampleUnnormalizedPdf(const std::unordered_map<KeyType, ValueType>& pdf) {
+    double r;
+    double s = 0;
+    for (const auto& atom : pdf) {
+      s += atom.second;
+    }
+    r = NextDouble() * s;
+    s = 0;
+    KeyType last = (*pdf.begin()).first;
+    for (const auto& atom : pdf) {
+      s += atom.second;
+      last = atom.first;
+      if (r <= s) {
+        return last;
+      }
+    }
+    return last;
   }
 };
 
@@ -139,19 +200,25 @@ public:
     : gen(std::bind(std::uniform_real_distribution<double>(0.0, 1.0),
                     std::mt19937(seed))) {
   }
-  double NextDouble() {
+  virtual double NextDouble() {
     return gen();
   }
+  virtual double NextGaussian(double mean, double stddev) {
+    return std::bind(std::normal_distribution<>(mean, stddev), std::mt19937())();
+  }
 private:
-  std::function<double(void)> gen;  
+  std::function<double(void)> gen;
 };
 
 class RandomRand : public RandomBase {
 public:
   RandomRand(int seed = 10)
-    : gen(rand) {}
-  double NextDouble() {
+    : gen(rand) { srand(seed); }
+  virtual double NextDouble() {
     return static_cast<double>(gen()) / static_cast<double>(INT_MAX);
+  }
+  virtual double NextGaussian(double, double) {
+    throw std::string("RandomRand does not support NextGaussian()!!!");
   }
 private:
   std::function<double(void)> gen;
