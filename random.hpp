@@ -9,6 +9,32 @@
 #include <cmath>
 #include <unordered_map>
 
+namespace {
+
+double fast_logsumexp(double a, double b) {
+  if (a == -INFINITY && b == -INFINITY) return -INFINITY;
+  if (a>b) {
+    return log(1+exp(b-a)) + a;
+  } else {
+    return log(1+exp(a-b)) + b;
+  }
+}
+
+double fast_logsumexp(std::vector<double> a) {
+  if (!a.empty()) {
+    double z = a[0];
+    for (size_t i = 1; i < a.size(); ++i) {
+      z = fast_logsumexp(z, a[i]);
+    }
+    return z;
+  } else {
+    return 1;
+  }
+}
+
+}
+
+
 class RandomBase {
 public:
   virtual ~RandomBase() {}
@@ -157,6 +183,16 @@ public:
 
     assert(x == 0 || pdf[x-1] != pdf[x]);
     return x;
+  }
+
+  // sample from vector of log probabilities
+  int SampleLogPdf(std::vector<double> lpdf) {
+    double logSum = fast_logsumexp(lpdf);
+
+    for (size_t i = 0; i < lpdf.size(); ++i) {
+      lpdf[i] = exp(lpdf[i] - logSum);
+    }
+    return SampleUnnormalizedPdf(lpdf);
   }
   
   int SamplePdfAnnealing(std::vector<double> pdf, double templature = 1, int endPos = 0) {
