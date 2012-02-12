@@ -51,7 +51,7 @@ public:
   }
 
   long int NextMult(long int max) {
-    return NextDouble() * (max-1);
+    return NextDouble() * max;
   }
 
   bool NextBernoille(double trueProb) {
